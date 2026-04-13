@@ -1,10 +1,16 @@
 import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
+import javax.swing.table.DefaultTableCellRenderer;
 import java.awt.*;
 
 public class RegulaFalsi extends JFrame {
 
     private JTextField functionField, x0Field, x1Field, errorField;
-    private JTextArea outputArea;
+
+    private JTable table;
+    private DefaultTableModel model;
+
+    private JLabel resultLabel;
 
     public RegulaFalsi() {
 
@@ -17,18 +23,18 @@ public class RegulaFalsi extends JFrame {
         JPanel inputPanel = new JPanel(new GridLayout(5, 2, 5, 5));
 
         inputPanel.add(new JLabel("f(x):"));
-        functionField = new JTextField("sin(x) - 0.5");
+        functionField = new JTextField("x^3 - x - 2");
         inputPanel.add(functionField);
 
         inputPanel.add(new JLabel("x0:"));
-        x0Field = new JTextField("0");
+        x0Field = new JTextField();
         inputPanel.add(x0Field);
 
         inputPanel.add(new JLabel("x1:"));
-        x1Field = new JTextField("2");
+        x1Field = new JTextField();
         inputPanel.add(x1Field);
 
-        inputPanel.add(new JLabel("Ea tolerance (%):"));
+        inputPanel.add(new JLabel("Ea tolerance:"));
         errorField = new JTextField("0.01");
         inputPanel.add(errorField);
 
@@ -40,9 +46,32 @@ public class RegulaFalsi extends JFrame {
 
         add(inputPanel, BorderLayout.NORTH);
 
-        outputArea = new JTextArea();
-        outputArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
-        add(new JScrollPane(outputArea), BorderLayout.CENTER);
+        String[] columns = {"Iter", "x0", "x1", "x2", "f(x2)", "Ea"};
+        model = new DefaultTableModel(columns, 0);
+        table = new JTable(model);
+
+        // ✅ ONLY ADDITION: disable column dragging
+        table.getTableHeader().setReorderingAllowed(false);
+
+        DefaultTableCellRenderer center = new DefaultTableCellRenderer();
+        center.setHorizontalAlignment(SwingConstants.CENTER);
+
+        for (int i = 0; i < table.getColumnCount(); i++) {
+            table.getColumnModel().getColumn(i).setCellRenderer(center);
+        }
+
+        JPanel outputPanel = new JPanel(new BorderLayout());
+        outputPanel.add(new JScrollPane(table), BorderLayout.CENTER);
+
+        resultLabel = new JLabel("Root: ");
+        resultLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        resultLabel.setFont(new Font("Arial", Font.BOLD, 16));
+        resultLabel.setBorder(BorderFactory.createEmptyBorder(10, 0, 10, 0));
+        resultLabel.setForeground(new Color(0, 100, 0));
+
+        outputPanel.add(resultLabel, BorderLayout.SOUTH);
+
+        add(outputPanel, BorderLayout.CENTER);
 
         computeBtn.addActionListener(e -> compute());
 
@@ -52,61 +81,100 @@ public class RegulaFalsi extends JFrame {
         });
     }
 
+    // ✔ helper for 2-decimal rounding
+    private double round2(double v) {
+        return Math.round(v * 100.0) / 100.0;
+    }
+
     private void compute() {
 
-        outputArea.setText("");
+        model.setRowCount(0);
+        resultLabel.setText("Root: ");
 
         try {
             String expr = functionField.getText();
-            double a = Double.parseDouble(x0Field.getText());
-            double b = Double.parseDouble(x1Field.getText());
-            double error = Double.parseDouble(errorField.getText());
 
-            int itr = 50;
+            expr = expr.replaceAll("\\s+", "");
 
-            double fa = MathParser.f(expr, a);
-            double fb = MathParser.f(expr, b);
-
-            double r = 0, r0 = 0, fr;
-            double Ea = 100;
-
-            outputArea.append("Iter   x0     x1     x2     f(x2)     Ea\n");
-            outputArea.append("------------------------------------------------\n");
-
-            for (int i = 1; i <= itr; i++) {
-
-                r = (a * fb - b * fa) / (fb - fa);
-                fr = MathParser.f(expr, r);
-
-                if (i == 1) {
-                    Ea = 100;
-                } else {
-                    Ea = Math.abs((r - r0) / r) * 100;
-                }
-
-                outputArea.append(String.format(
-                        "%-6d %-6.2f %-6.2f %-6.2f %-8.4f %-6s\n",
-                        i, a, b, r, fr,
-                        (i == 1 ? "N/A" : String.format("%.2f", Ea))
-                ));
-
-                if (i > 1 && Ea <= error) break;
-
-                if (fa * fr < 0) {
-                    b = r;
-                    fb = fr;
-                } else {
-                    a = r;
-                    fa = fr;
-                }
-
-                r0 = r;
+            if (!expr.matches("[0-9x+\\-*/^().a-zA-Z]+")) {
+                JOptionPane.showMessageDialog(this, "Invalid characters in function!");
+                return;
             }
 
-            outputArea.append("\nRoot ≈ " + String.format("%.2f", r));
+            String temp = expr;
+
+            String[] validFunctions = {"sin", "cos", "tan", "log", "sqrt"};
+
+            for (String f : validFunctions) {
+                temp = temp.replace(f, "");
+            }
+
+            temp = temp.replaceAll("[x0-9+\\-*/^().]", "");
+
+            if (!temp.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "Invalid or unsupported function detected!");
+                return;
+            }
+
+            double x0 = Double.parseDouble(x0Field.getText());
+            double x1 = Double.parseDouble(x1Field.getText());
+            double tol = Double.parseDouble(errorField.getText());
+
+            double f0 = MathParser.f(expr, x0);
+            double f1 = MathParser.f(expr, x1);
+
+            if (f0 * f1 >= 0) {
+                JOptionPane.showMessageDialog(this,
+                        "Invalid interval: f(x0) and f(x1) must have opposite signs.");
+                return;
+            }
+
+            double x2 = 0, x2Old = 0;
+            double Ea = 100;
+            String EaText;
+
+            for (int i = 1; i <= 50; i++) {
+
+                x2 = (x0 * f1 - x1 * f0) / (f1 - f0);
+
+                x2 = round2(x2);
+
+                double fx2 = round2(MathParser.f(expr, x2));
+
+                if (i == 1) {
+                    EaText = "N/A";
+                } else {
+                    Ea = Math.abs(x2 - x2Old);
+                    Ea = round2(Ea);
+                    EaText = String.format("%.2f", Ea);
+                }
+
+                model.addRow(new Object[]{
+                        i,
+                        String.format("%.2f", x0),
+                        String.format("%.2f", x1),
+                        String.format("%.2f", x2),
+                        String.format("%.2f", fx2),
+                        EaText
+                });
+
+                if (i > 1 && Ea <= tol) break;
+
+                if (f0 * fx2 < 0) {
+                    x1 = x2;
+                    f1 = fx2;
+                } else {
+                    x0 = x2;
+                    f0 = fx2;
+                }
+
+                x2Old = x2;
+            }
+
+            resultLabel.setText("Estimated Root ≈ " + String.format("%.2f", x2));
 
         } catch (Exception e) {
-            outputArea.setText("Error: Invalid input.");
+            JOptionPane.showMessageDialog(this, "Error: Invalid input.");
         }
     }
 }

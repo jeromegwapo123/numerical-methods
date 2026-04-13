@@ -1,10 +1,16 @@
 import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
+import javax.swing.table.DefaultTableCellRenderer;
 import java.awt.*;
 
 public class Bisection extends JFrame {
 
     private JTextField functionField, x0Field, x1Field, errorField;
-    private JTextArea outputArea;
+
+    private JTable table;
+    private DefaultTableModel model;
+
+    private JLabel resultLabel;
 
     public Bisection() {
 
@@ -14,7 +20,6 @@ public class Bisection extends JFrame {
         setLocationRelativeTo(null);
         setLayout(new BorderLayout());
 
-        // ================= INPUT PANEL =================
         JPanel inputPanel = new JPanel(new GridLayout(5, 2, 5, 5));
 
         inputPanel.add(new JLabel("f(x):"));
@@ -41,12 +46,39 @@ public class Bisection extends JFrame {
 
         add(inputPanel, BorderLayout.NORTH);
 
-        // ================= OUTPUT =================
-        outputArea = new JTextArea();
-        outputArea.setFont(new Font("Monospaced", Font.PLAIN, 12));
-        add(new JScrollPane(outputArea), BorderLayout.CENTER);
+        String[] columns = {"Iter", "x0", "x1", "x2", "f(x2)", "Ea"};
 
-        // ================= ACTIONS =================
+        // ✅ ONLY CHANGE HERE
+        model = new DefaultTableModel(columns, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+
+        table = new JTable(model);
+        table.getTableHeader().setReorderingAllowed(false);
+
+        DefaultTableCellRenderer center = new DefaultTableCellRenderer();
+        center.setHorizontalAlignment(SwingConstants.CENTER);
+
+        for (int i = 0; i < table.getColumnCount(); i++) {
+            table.getColumnModel().getColumn(i).setCellRenderer(center);
+        }
+
+        JPanel outputPanel = new JPanel(new BorderLayout());
+        outputPanel.add(new JScrollPane(table), BorderLayout.CENTER);
+
+        resultLabel = new JLabel("Root: ");
+        resultLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        resultLabel.setFont(new Font("Arial", Font.BOLD, 16));
+        resultLabel.setBorder(BorderFactory.createEmptyBorder(10, 0, 10, 0));
+        resultLabel.setForeground(new Color(0, 100, 0));
+
+        outputPanel.add(resultLabel, BorderLayout.SOUTH);
+
+        add(outputPanel, BorderLayout.CENTER);
+
         computeBtn.addActionListener(e -> compute());
 
         backBtn.addActionListener(e -> {
@@ -55,60 +87,80 @@ public class Bisection extends JFrame {
         });
     }
 
-    // ================= COMPUTE =================
+    private double round2(double v) {
+        return Math.round(v * 100.0) / 100.0;
+    }
+
     private void compute() {
 
-        outputArea.setText("");
+        model.setRowCount(0);
+        resultLabel.setText("Root: ");
 
         try {
             String expr = functionField.getText();
+
+            expr = expr.replaceAll("\\s+", "");
+
+            if (!expr.matches("[0-9x+\\-*/^().a-zA-Z]+")) {
+                JOptionPane.showMessageDialog(this, "Invalid characters in function!");
+                return;
+            }
+
+            String temp = expr;
+
+            String[] validFunctions = {"sin", "cos", "tan", "log", "sqrt"};
+
+            for (String f : validFunctions) {
+                temp = temp.replace(f, "");
+            }
+
+            temp = temp.replaceAll("[x0-9+\\-*/^().]", "");
+
+            if (!temp.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "Invalid or unsupported function detected!");
+                return;
+            }
+
             double x0 = Double.parseDouble(x0Field.getText());
             double x1 = Double.parseDouble(x1Field.getText());
             double tol = Double.parseDouble(errorField.getText());
 
-            // ✔ FIX: initialize x2 properly
-            double x2 = 0;
-            double x2Old = 0;
+            double x2 = 0, x2Old = 0;
             double Ea = 100;
             String EaText;
 
             if (MathParser.f(expr, x0) * MathParser.f(expr, x1) >= 0) {
-                outputArea.setText("Invalid interval: f(x0) and f(x1) must have opposite signs.");
+                JOptionPane.showMessageDialog(this,
+                        "Invalid interval: f(x0) and f(x1) must have opposite signs.");
                 return;
             }
-
-            outputArea.append("Iter   x0     x1     x2     f(x2)   Ea\n");
-            outputArea.append("------------------------------------------------------\n");
 
             for (int i = 1; i <= 50; i++) {
 
                 x2 = (x0 + x1) / 2;
-                double fx2 = MathParser.f(expr, x2);
+                x2 = round2(x2);
 
-                // ROUNDING (2 DECIMALS)
-                x0 = Math.round(x0 * 100.0) / 100.0;
-                x1 = Math.round(x1 * 100.0) / 100.0;
-                x2 = Math.round(x2 * 100.0) / 100.0;
-                fx2 = Math.round(fx2 * 100.0) / 100.0;
+                double fx2 = round2(MathParser.f(expr, x2));
 
-                // ERROR COMPUTATION
                 if (i == 1) {
                     EaText = "N/A";
                 } else {
-                    Ea = Math.abs((x2 - x2Old) / x2);
-                    Ea = Math.round(Ea * 100.0) / 100.0;
+                    Ea = Math.abs(x2 - x2Old);
+                    Ea = round2(Ea);
                     EaText = String.format("%.2f", Ea);
                 }
 
-                outputArea.append(
-                        String.format("%-6d %-6.2f %-6.2f %-6.2f %-8.2f %-6s\n",
-                                i, x0, x1, x2, fx2, EaText)
-                );
+                model.addRow(new Object[]{
+                        i,
+                        String.format("%.2f", x0),
+                        String.format("%.2f", x1),
+                        String.format("%.2f", x2),
+                        String.format("%.2f", fx2),
+                        EaText
+                });
 
-                // STOP CONDITION
                 if (i > 1 && Ea <= tol) break;
 
-                // UPDATE INTERVAL
                 if (MathParser.f(expr, x0) * fx2 < 0) {
                     x1 = x2;
                 } else {
@@ -118,10 +170,10 @@ public class Bisection extends JFrame {
                 x2Old = x2;
             }
 
-            outputArea.append("\nRoot ≈ " + String.format("%.2f", x2));
+            resultLabel.setText("Estimated Root ≈ " + String.format("%.2f", x2));
 
         } catch (Exception e) {
-            outputArea.setText("Error: Invalid input.");
+            JOptionPane.showMessageDialog(this, "Error: Invalid input.");
         }
     }
 }

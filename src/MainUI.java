@@ -13,7 +13,7 @@ public class MainUI {
 
         // ================= BACKGROUND IMAGE =================
         Image img = new ImageIcon(
-                new File("out/source/dingdong.jpg").getAbsolutePath()
+                new File("out/source/coco.jpg").getAbsolutePath()
         ).getImage();
 
         JPanel background = new JPanel() {
