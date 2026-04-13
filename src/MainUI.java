@@ -70,7 +70,12 @@ public class MainUI {
             new Bisection().setVisible(true);
         });
 
-        regulaBtn.addActionListener(e -> open(frame, "Regula-Falsi Method"));
+        regulaBtn.addActionListener(e -> {
+            frame.dispose();
+            new RegulaFalsi().setVisible(true);
+        });
+
+
         newtonBtn.addActionListener(e -> open(frame, "Newton Method"));
         secantBtn.addActionListener(e -> open(frame, "Secant Method"));
         jacobiBtn.addActionListener(e -> open(frame, "Gauss-Jacobi Method"));
