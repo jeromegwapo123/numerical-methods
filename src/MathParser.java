@@ -4,22 +4,54 @@ import java.lang.Math;
 public class MathParser {
 
     public static double f(String expr, double xValue) {
+        expr = preprocess(expr);
         List<String> postfix = toPostfix(expr);
         return evalPostfix(postfix, xValue);
     }
 
-    private static List<String> toPostfix(String expr) {
-
+    // Handle implicit multiplication: 2x → 2*x, )(  → )*(, x( → x*(
+    private static String preprocess(String expr) {
         expr = expr.replaceAll("\\s+", "");
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < expr.length(); i++) {
+            char c = expr.charAt(i);
+            sb.append(c);
+            if (i + 1 < expr.length()) {
+                char next = expr.charAt(i + 1);
+                boolean currentIsNum  = Character.isDigit(c) || c == '.';
+                boolean currentIsX    = (c == 'x');
+                boolean currentClose  = (c == ')');
+                boolean nextIsX       = (next == 'x');
+                boolean nextIsOpen    = (next == '(');
+                boolean nextIsAlpha   = Character.isLetter(next);
 
+                if ((currentIsNum || currentIsX || currentClose) &&
+                        (nextIsX || nextIsOpen || (nextIsAlpha && !isFuncStart(expr, i + 1)))) {
+                    sb.append('*');
+                }
+            }
+        }
+        return sb.toString();
+    }
+
+    private static boolean isFuncStart(String expr, int idx) {
+        String[] funcs = {"sin", "cos", "tan", "log", "sqrt", "exp"};
+        for (String f : funcs) {
+            if (expr.startsWith(f, idx)) return true;
+        }
+        return false;
+    }
+
+    private static List<String> toPostfix(String expr) {
         List<String> output = new ArrayList<>();
         Stack<String> stack = new Stack<>();
 
-        Map<String, Integer> prec = Map.of(
-                "+", 1, "-", 1,
-                "*", 2, "/", 2,
-                "^", 3
-        );
+        Map<String, Integer> prec = new HashMap<>();
+        prec.put("+", 1); prec.put("-", 1);
+        prec.put("*", 2); prec.put("/", 2);
+        prec.put("^", 3);
+
+        String[] funcs = {"sin", "cos", "tan", "log", "sqrt", "exp"};
 
         StringBuilder token = new StringBuilder();
 
@@ -29,22 +61,14 @@ public class MathParser {
             if (Character.isLetterOrDigit(c) || c == '.') {
                 token.append(c);
             } else {
-
                 if (token.length() > 0) {
                     String t = token.toString();
-
-                    // ✔ FIX: functions OR variables
-                    if (t.equalsIgnoreCase("sin") ||
-                            t.equalsIgnoreCase("cos") ||
-                            t.equalsIgnoreCase("tan") ||
-                            t.equalsIgnoreCase("log") ||
-                            t.equalsIgnoreCase("sqrt")) {
-
-                        stack.push(t);
-                    } else {
-                        output.add(t);
+                    boolean isFunc = false;
+                    for (String f : funcs) {
+                        if (t.equalsIgnoreCase(f)) { isFunc = true; break; }
                     }
-
+                    if (isFunc) stack.push(t);
+                    else output.add(t);
                     token.setLength(0);
                 }
 
@@ -52,28 +76,21 @@ public class MathParser {
 
                 if (op.equals("(")) {
                     stack.push(op);
-                }
-
-                else if (op.equals(")")) {
-
+                } else if (op.equals(")")) {
                     while (!stack.isEmpty() && !stack.peek().equals("(")) {
                         output.add(stack.pop());
                     }
-
-                    if (!stack.isEmpty()) stack.pop();
-
-                    // ✔ FIX: if function exists, pop it too
-                    if (!stack.isEmpty() &&
-                            (stack.peek().equalsIgnoreCase("sin") ||
-                                    stack.peek().equalsIgnoreCase("cos") ||
-                                    stack.peek().equalsIgnoreCase("tan") ||
-                                    stack.peek().equalsIgnoreCase("log") ||
-                                    stack.peek().equalsIgnoreCase("sqrt"))) {
-                        output.add(stack.pop());
+                    if (!stack.isEmpty()) stack.pop(); // pop "("
+                    // pop function if on top
+                    if (!stack.isEmpty()) {
+                        String top = stack.peek();
+                        for (String f : funcs) {
+                            if (top.equalsIgnoreCase(f)) { output.add(stack.pop()); break; }
+                        }
                     }
-                }
-
-                else {
+                } else if (prec.containsKey(op)) {
+                    // Handle unary minus: if op is '-' and previous token is operator or '(' or start
+                    // We'll push a 0 to simulate unary minus
                     while (!stack.isEmpty() &&
                             prec.containsKey(stack.peek()) &&
                             prec.get(stack.peek()) >= prec.get(op)) {
@@ -84,64 +101,33 @@ public class MathParser {
             }
         }
 
-        if (token.length() > 0) {
-            output.add(token.toString());
-        }
-
-        while (!stack.isEmpty()) {
-            output.add(stack.pop());
-        }
+        if (token.length() > 0) output.add(token.toString());
+        while (!stack.isEmpty()) output.add(stack.pop());
 
         return output;
     }
 
     private static double evalPostfix(List<String> postfix, double xValue) {
-
         Stack<Double> stack = new Stack<>();
 
         for (String t : postfix) {
-
-            if (t.equals("x")) {
-                stack.push(xValue);
+            switch (t.toLowerCase()) {
+                case "x":
+                    stack.push(xValue); break;
+                case "+": { double b = stack.pop(), a = stack.pop(); stack.push(a + b); break; }
+                case "-": { double b = stack.pop(), a = stack.pop(); stack.push(a - b); break; }
+                case "*": { double b = stack.pop(), a = stack.pop(); stack.push(a * b); break; }
+                case "/": { double b = stack.pop(), a = stack.pop(); stack.push(a / b); break; }
+                case "^": { double b = stack.pop(), a = stack.pop(); stack.push(Math.pow(a, b)); break; }
+                case "sin":  stack.push(Math.sin(stack.pop())); break;
+                case "cos":  stack.push(Math.cos(stack.pop())); break;
+                case "tan":  stack.push(Math.tan(stack.pop())); break;
+                case "sqrt": stack.push(Math.sqrt(stack.pop())); break;
+                case "log":  stack.push(Math.log(stack.pop())); break;
+                case "exp":  stack.push(Math.exp(stack.pop())); break;
+                default:
+                    stack.push(Double.parseDouble(t));
             }
-
-            else if (t.matches("-?\\d+(\\.\\d+)?")) {
-                stack.push(Double.parseDouble(t));
-            }
-
-            else if (t.equals("+")) stack.push(stack.pop() + stack.pop());
-
-            else if (t.equals("-")) {
-                double b = stack.pop(), a = stack.pop();
-                stack.push(a - b);
-            }
-
-            else if (t.equals("*")) stack.push(stack.pop() * stack.pop());
-
-            else if (t.equals("/")) {
-                double b = stack.pop(), a = stack.pop();
-                stack.push(a / b);
-            }
-
-            else if (t.equals("^")) {
-                double b = stack.pop(), a = stack.pop();
-                stack.push(Math.pow(a, b));
-            }
-
-            else if (t.equalsIgnoreCase("sin"))
-                stack.push(Math.sin(stack.pop()));
-
-            else if (t.equalsIgnoreCase("cos"))
-                stack.push(Math.cos(stack.pop()));
-
-            else if (t.equalsIgnoreCase("tan"))
-                stack.push(Math.tan(stack.pop()));
-
-            else if (t.equalsIgnoreCase("sqrt"))
-                stack.push(Math.sqrt(stack.pop()));
-
-            else if (t.equalsIgnoreCase("log"))
-                stack.push(Math.log(stack.pop()));
         }
 
         return stack.pop();
